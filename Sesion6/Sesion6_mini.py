@@ -5,13 +5,9 @@ import random
 pygame.init()
 
 # Configuración de ventana
-ANCHO, ALTO = 800, 600
+ANCHO, ALTO = 800, 800
 ventana = pygame.display.set_mode((ANCHO, ALTO))
 pygame.display.set_caption("Evita los Círculos")
-
-# Fuentes
-fuente = pygame.font.Font(None, 74)
-fuente_peque = pygame.font.Font(None, 36)
 
 # Cargar hoja de sprites
 sprite_sheet = pygame.image.load("Sesion5_Ej2/cat_sprite1.png").convert_alpha()
@@ -21,10 +17,9 @@ cols = 10
 rows = 8
 frame_ancho = sprite_sheet.get_width() // cols
 frame_alto = sprite_sheet.get_height() // rows
-margen = 1
-fila = 0  # fila de animación (puedes cambiarla)
 
-# Extraer y escalar frames
+margen = 1
+fila = 0
 frames = []
 for i in range(cols):
     x = i * frame_ancho
@@ -39,32 +34,58 @@ indice_frame = 0
 tiempo_cambio = 100
 ultimo_cambio = pygame.time.get_ticks()
 
-# Parámetros del jugador
-velocidad = 7
+# Posición y movimiento del jugador
+x = ANCHO // 2
+y = ALTO - frames[0].get_height() - 20
+velocidad = 5
 direccion = "derecha"
 moviendo = False
 
+# Enemigos
+enemigos = []
+for _ in range(3):  # empieza con pocos
+    enemigos.append({
+        "x": random.randint(0, ANCHO),
+        "y": random.randint(-300, -50),
+        "r": 25,
+        "vel": random.uniform(1.5, 3.0)
+    })
+
+# Puntos azules
+puntos = []
+ultimo_spawn_punto = pygame.time.get_ticks()
+spawn_intervalo = 3000  # cada 3 segundos
+duracion_punto = 5000   # desaparece después de 5 s
+
+# Variables de juego
+reloj = pygame.time.Clock()
+font = pygame.font.Font(None, 36)
+inicio_tiempo = pygame.time.get_ticks()
+puntuacion = 0
+game_over = False
+tiempo_derrota = 0
+tiempo_vivo = 0
+puntuacion_final = 0
+
 # Función para reiniciar el juego
 def reiniciar():
-    jugador = pygame.Rect(ANCHO//2, ALTO - frames[0].get_height() - 20, frames[0].get_width(), frames[0].get_height())
+    global enemigos, inicio_tiempo, puntuacion, game_over, tiempo_derrota, puntos, x, tiempo_vivo, puntuacion_final
     enemigos = []
-    for _ in range(5):
-        enemigo = {
-            "x": random.randint(50, ANCHO - 50),
-            "y": random.randint(-400, -50),
-            "radio": random.randint(20, 35),
-            "vel": random.randint(3, 6)
-        }
-        enemigos.append(enemigo)
-    return jugador, enemigos
-
-jugador, enemigos = reiniciar()
-clock = pygame.time.Clock()
-
-# Estado del juego
-estado = "jugando"
-tiempo_derrota = 0
-inicio_tiempo = pygame.time.get_ticks()  # tiempo inicial
+    for _ in range(3):
+        enemigos.append({
+            "x": random.randint(0, ANCHO),
+            "y": random.randint(-300, -50),
+            "r": 25,
+            "vel": random.uniform(1.5, 3.0)
+        })
+    x = ANCHO // 2
+    puntuacion = 0
+    puntos = []
+    inicio_tiempo = pygame.time.get_ticks()
+    game_over = False
+    tiempo_derrota = 0
+    tiempo_vivo = 0
+    puntuacion_final = 0
 
 # Bucle principal
 while True:
@@ -73,25 +94,24 @@ while True:
             pygame.quit()
             sys.exit()
 
-    if estado == "jugando":
-        teclas = pygame.key.get_pressed()
-        moviendo = False
+    teclas = pygame.key.get_pressed()
 
-        # Movimiento horizontal
+    if not game_over:
+        moviendo = False
         if teclas[pygame.K_a]:
-            jugador.x -= velocidad
+            x -= velocidad
             direccion = "izquierda"
             moviendo = True
         if teclas[pygame.K_d]:
-            jugador.x += velocidad
+            x += velocidad
             direccion = "derecha"
             moviendo = True
 
-        # Límites
-        if jugador.x < 0:
-            jugador.x = 0
-        if jugador.x + jugador.width > ANCHO:
-            jugador.x = ANCHO - jugador.width
+        # Limitar movimiento
+        if x < 0:
+            x = 0
+        if x + frames[0].get_width() > ANCHO:
+            x = ANCHO - frames[0].get_width()
 
         # Animación
         tiempo_actual = pygame.time.get_ticks()
@@ -105,53 +125,86 @@ while True:
         if direccion == "izquierda":
             frame_actual = pygame.transform.flip(frame_actual, True, False)
 
+        # Tiempo y dificultad progresiva
+        tiempo_vivo = (tiempo_actual - inicio_tiempo) // 1000
+        dificultad = 1 + (tiempo_vivo // 10) * 0.25  # cada 10 seg aumenta un 25%
+        velocidad_enemigo = 2.0 * dificultad
+
+        # Aumentar cantidad de enemigos con el tiempo (máx 10)
+        if len(enemigos) < 10 and tiempo_vivo % 15 == 0 and tiempo_vivo > 0:
+            enemigos.append({
+                "x": random.randint(0, ANCHO),
+                "y": random.randint(-300, -50),
+                "r": 25,
+                "vel": random.uniform(2, 4) * dificultad
+            })
+
         # Mover enemigos
-        for enemigo in enemigos:
-            enemigo["y"] += enemigo["vel"]
-            if enemigo["y"] > ALTO + enemigo["radio"]:
-                enemigo["y"] = random.randint(-400, -50)
-                enemigo["x"] = random.randint(50, ANCHO - 50)
-                enemigo["vel"] = random.randint(3, 6)
+        for e in enemigos:
+            e["y"] += e["vel"]
+            if e["y"] > ALTO:
+                e["y"] = random.randint(-100, -40)
+                e["x"] = random.randint(0, ANCHO)
+                e["vel"] = random.uniform(1.5, 3.5) * dificultad
+
+        # Generar puntos azules (más arriba)
+        if tiempo_actual - ultimo_spawn_punto > spawn_intervalo:
+            puntos.append({
+                "x": random.randint(50, ANCHO - 50),
+                "y": random.randint(ALTO - 220, ALTO - 120),
+                "spawn": tiempo_actual
+            })
+            ultimo_spawn_punto = tiempo_actual
+
+        # Eliminar puntos caducados
+        puntos = [p for p in puntos if tiempo_actual - p["spawn"] < duracion_punto]
 
         # Colisiones
-        colision = False
-        for enemigo in enemigos:
-            dx = jugador.centerx - enemigo["x"]
-            dy = jugador.centery - enemigo["y"]
-            distancia = (dx**2 + dy**2)**0.5
-            if distancia < enemigo["radio"] + jugador.width/3:
-                colision = True
+        jugador_rect = pygame.Rect(x, y, frame_actual.get_width(), frame_actual.get_height())
+        for e in enemigos:
+            dist = ((x + frame_actual.get_width() // 2 - e["x"]) ** 2 +
+                    (y + frame_actual.get_height() // 2 - e["y"]) ** 2) ** 0.5
+            if dist < e["r"] + frame_actual.get_width() // 2.5:
+                game_over = True
+                tiempo_derrota = pygame.time.get_ticks()
+                puntuacion_final = puntuacion
                 break
 
-        if colision:
-            estado = "derrota"
-            tiempo_derrota = pygame.time.get_ticks()
-
-        # Calcular tiempo vivo
-        tiempo_vivo_ms = pygame.time.get_ticks() - inicio_tiempo
-        segundos = (tiempo_vivo_ms // 1000) % 60
-        minutos = (tiempo_vivo_ms // 60000)
-        texto_tiempo = fuente_peque.render(f"Tiempo vivo: {minutos:02}:{segundos:02}", True, (255, 255, 255))
+        # Colisión con puntos
+        for p in puntos[:]:
+            if jugador_rect.collidepoint(p["x"], p["y"]):
+                puntos.remove(p)
+                puntuacion += 1
 
         # Dibujar
         ventana.fill((20, 20, 35))
-        for enemigo in enemigos:
-            pygame.draw.circle(ventana, (255, 0, 0), (enemigo["x"], enemigo["y"]), enemigo["radio"])
-        ventana.blit(frame_actual, (jugador.x, jugador.y))
-        ventana.blit(texto_tiempo, (ANCHO - texto_tiempo.get_width() - 20, 20))
+        for e in enemigos:
+            pygame.draw.circle(ventana, (255, 0, 0), (e["x"], int(e["y"])), e["r"])
+        for p in puntos:
+            pygame.draw.circle(ventana, (0, 100, 255), (p["x"], p["y"]), 8)
 
-    elif estado == "derrota":
-        ventana.fill((10, 10, 25))
-        texto = fuente.render("¡Has perdido!", True, (255, 50, 50))
-        subtexto = fuente_peque.render("Reiniciando...", True, (255, 255, 255))
-        ventana.blit(texto, (ANCHO//2 - texto.get_width()//2, ALTO//2 - 50))
-        ventana.blit(subtexto, (ANCHO//2 - subtexto.get_width()//2, ALTO//2 + 20))
+        ventana.blit(frame_actual, (x, y))
 
-        # Reiniciar después de 5 segundos
-        if pygame.time.get_ticks() - tiempo_derrota > 5000:
-            jugador, enemigos = reiniciar()
-            estado = "jugando"
-            inicio_tiempo = pygame.time.get_ticks()  # reinicia el contador
+        # Mostrar tiempo vivo y puntuación
+        minutos = tiempo_vivo // 60
+        segundos = tiempo_vivo % 60
+        texto_tiempo = font.render(f"Tiempo vivo: {minutos:02}:{segundos:02}", True, (255, 255, 255))
+        texto_puntos = font.render(f"Puntuación: {puntuacion}", True, (0, 150, 255))
+        ventana.blit(texto_tiempo, (ANCHO - 260, 10))
+        ventana.blit(texto_puntos, (ANCHO - 260, 50))
+
+    else:
+        ventana.fill((10, 10, 20))
+        texto = font.render("¡Has perdido!", True, (255, 80, 80))
+        texto_tiempo_final = font.render(f"Tiempo sobrevivido: {tiempo_vivo // 60:02}:{tiempo_vivo % 60:02}", True, (255, 255, 255))
+        texto_puntos_final = font.render(f"Puntuación final: {puntuacion_final}", True, (0, 150, 255))
+        ventana.blit(texto, (ANCHO // 2 - 100, ALTO // 2 - 60))
+        ventana.blit(texto_tiempo_final, (ANCHO // 2 - 130, ALTO // 2))
+        ventana.blit(texto_puntos_final, (ANCHO // 2 - 110, ALTO // 2 + 40))
+
+        # Reiniciar después de 3 segundos
+        if pygame.time.get_ticks() - tiempo_derrota > 3000:
+            reiniciar()
 
     pygame.display.flip()
-    clock.tick(60)
+    reloj.tick(60)
